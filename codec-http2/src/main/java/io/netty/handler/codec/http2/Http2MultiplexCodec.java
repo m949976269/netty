@@ -773,7 +773,11 @@ public class Http2MultiplexCodec extends Http2FrameCodec {
         }
 
         void fireChildExceptionCaught(Throwable cause) {
-            pipeline().fireExceptionCaught(wrapStreamClosedError(cause));
+            Throwable error = wrapStreamClosedError(cause);
+            pipeline().fireExceptionCaught(error);
+            if (error instanceof ClosedChannelException) {
+                unsafe().closeForcibly();
+            }
         }
 
         private Throwable wrapStreamClosedError(Throwable cause) {
@@ -1077,7 +1081,12 @@ public class Http2MultiplexCodec extends Http2FrameCodec {
                 if (cause == null) {
                     promise.setSuccess();
                 } else {
-                    promise.setFailure(wrapStreamClosedError(cause));
+                    Throwable error = wrapStreamClosedError(cause);
+                    promise.setFailure(error);
+                    if (error instanceof ClosedChannelException) {
+                        // Close channel if needed.
+                        closeForcibly();
+                    }
                 }
             }
 
