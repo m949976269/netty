@@ -31,6 +31,7 @@ import io.netty.util.AsciiString;
 import io.netty.util.AttributeKey;
 
 import java.net.InetSocketAddress;
+import java.nio.channels.ClosedChannelException;
 
 import org.junit.After;
 import org.junit.Before;
@@ -283,6 +284,21 @@ public class Http2MultiplexCodecTest {
         StreamException cause = new StreamException(inboundStream.id(), Http2Error.PROTOCOL_ERROR, "baaam!");
         Http2FrameStreamException http2Ex = new Http2FrameStreamException(
                 inboundStream, Http2Error.PROTOCOL_ERROR, cause);
+        codec.onHttp2FrameStreamException(http2Ex);
+        parentChannel.runPendingTasks();
+
+        assertFalse(inboundHandler.isChannelActive());
+        inboundHandler.checkException();
+    }
+
+    @Test(expected = ClosedChannelException.class)
+    public void streamClosedErrorTranslatedToClosedChannelException() throws Exception {
+        LastInboundHandler inboundHandler = streamActiveAndWriteHeaders(inboundStream);
+
+        assertTrue(inboundHandler.isChannelActive());
+        StreamException cause = new StreamException(inboundStream.id(), Http2Error.STREAM_CLOSED, "Closed");
+        Http2FrameStreamException http2Ex = new Http2FrameStreamException(
+                inboundStream, cause.error(), cause);
         codec.onHttp2FrameStreamException(http2Ex);
         parentChannel.runPendingTasks();
 

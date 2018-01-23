@@ -277,7 +277,7 @@ public class Http2MultiplexCodec extends Http2FrameCodec {
         DefaultHttp2StreamChannel childChannel = ((Http2MultiplexCodecStream) stream).channel;
 
         try {
-            childChannel.pipeline().fireExceptionCaught(cause.getCause());
+            childChannel.fireChildExceptionCaught(cause.getCause());
         } finally {
             childChannel.unsafe().closeForcibly();
         }
@@ -772,6 +772,19 @@ public class Http2MultiplexCodec extends Http2FrameCodec {
             }
         }
 
+        void fireChildExceptionCaught(Throwable cause) {
+            pipeline().fireExceptionCaught(wrapStreamClosedError(cause));
+        }
+
+        private Throwable wrapStreamClosedError(Throwable cause) {
+            // If the error was caused by STREAM_CLOSED we should use a ClosedChannelException to better
+            // mimic other transports and make it easier to reason about what exceptions to expect.
+            if (cause instanceof Http2Exception && ((Http2Exception) cause).error() == Http2Error.STREAM_CLOSED) {
+                return new ClosedChannelException().initCause(cause);
+            }
+            return cause;
+        }
+
         private final class Http2ChannelUnsafe implements Unsafe {
             private final VoidChannelPromise unsafeVoidPromise =
                     new VoidChannelPromise(DefaultHttp2StreamChannel.this, false);
@@ -975,7 +988,7 @@ public class Http2MultiplexCodec extends Http2FrameCodec {
                     try {
                         writeDoneAndNoFlush |= onBytesConsumed(ctx, stream, numBytesToBeConsumed);
                     } catch (Http2Exception e) {
-                        pipeline().fireExceptionCaught(e);
+                        fireChildExceptionCaught(e);
                     }
                 }
             }
@@ -1054,7 +1067,7 @@ public class Http2MultiplexCodec extends Http2FrameCodec {
                     writabilityChanged(Http2MultiplexCodec.this.isWritable(stream));
                     promise.setSuccess();
                 } else {
-                    promise.setFailure(cause);
+                    promise.setFailure(wrapStreamClosedError(cause));
                     closeForcibly();
                 }
             }
@@ -1064,7 +1077,7 @@ public class Http2MultiplexCodec extends Http2FrameCodec {
                 if (cause == null) {
                     promise.setSuccess();
                 } else {
-                    promise.setFailure(cause);
+                    promise.setFailure(wrapStreamClosedError(cause));
                 }
             }
 
