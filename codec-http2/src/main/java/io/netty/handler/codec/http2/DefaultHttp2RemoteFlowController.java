@@ -28,6 +28,7 @@ import static io.netty.handler.codec.http2.Http2CodecUtil.MAX_WEIGHT;
 import static io.netty.handler.codec.http2.Http2CodecUtil.MIN_WEIGHT;
 import static io.netty.handler.codec.http2.Http2Error.FLOW_CONTROL_ERROR;
 import static io.netty.handler.codec.http2.Http2Error.INTERNAL_ERROR;
+import static io.netty.handler.codec.http2.Http2Error.STREAM_CLOSED;
 import static io.netty.handler.codec.http2.Http2Exception.streamError;
 import static io.netty.handler.codec.http2.Http2Stream.State.HALF_CLOSED_LOCAL;
 import static io.netty.util.internal.ObjectUtil.checkNotNull;
@@ -101,7 +102,7 @@ public class DefaultHttp2RemoteFlowController implements Http2RemoteFlowControll
             public void onStreamClosed(Http2Stream stream) {
                 // Any pending frames can never be written, cancel and
                 // write errors for any pending frames.
-                state(stream).cancel();
+                state(stream).cancel(STREAM_CLOSED, null);
             }
 
             @Override
@@ -118,7 +119,7 @@ public class DefaultHttp2RemoteFlowController implements Http2RemoteFlowControll
                      *
                      * This is to cancel any such illegal writes.
                      */
-                    state(stream).cancel();
+                    state(stream).cancel(STREAM_CLOSED, null);
                 }
             }
         });
@@ -393,7 +394,7 @@ public class DefaultHttp2RemoteFlowController implements Http2RemoteFlowControll
                 // If a cancellation occurred while writing, call cancel again to
                 // clear and error all of the pending writes.
                 if (cancelled) {
-                    cancel(cause);
+                    cancel(INTERNAL_ERROR, cause);
                 }
             }
             return writtenBytes;
@@ -463,25 +464,17 @@ public class DefaultHttp2RemoteFlowController implements Http2RemoteFlowControll
         }
 
         /**
-         * Any operations that may be pending are cleared and the status of these operations is failed.
-         */
-        void cancel() {
-            cancel(null);
-        }
-
-        /**
          * Clears the pending queue and writes errors for each remaining frame.
+         * @param error the {@link Http2Error} to use.
          * @param cause the {@link Throwable} that caused this method to be invoked.
          */
-        private void cancel(Throwable cause) {
+        void cancel(Http2Error error, Throwable cause) {
             cancelled = true;
             // Ensure that the queue can't be modified while we are writing.
             if (writing) {
                 return;
             }
 
-            // If cause == null this method was called via onStreamClosed(...) or onStreamHalfClosed(...)
-            Http2Error error = cause == null ? Http2Error.STREAM_CLOSED : INTERNAL_ERROR;
             for (;;) {
                 FlowControlled frame = pendingWriteQueue.poll();
                 if (frame == null) {
