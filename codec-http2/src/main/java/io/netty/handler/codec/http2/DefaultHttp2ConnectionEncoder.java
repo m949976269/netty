@@ -209,7 +209,23 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
                 if (failureCause == null) {
                     // Synchronously set the headersSent flag to ensure that we do not subsequently write
                     // other headers containing pseudo-header fields.
+                    //
+                    // This is best-afford as the operation is async it may still fail later on. We just update it here
+                    // directly as otherwise it may be challenging for the end-user to co-ordinate writes that depend
+                    // on the state.
                     stream.headersSent(isInformational);
+
+                    if (!future.isDone()) {
+                        future.addListener(new ChannelFutureListener() {
+                            @Override
+                            public void operationComplete(ChannelFuture future) throws Exception {
+                                Throwable cause = future.cause();
+                                if (cause != null) {
+                                    lifecycleManager.onError(ctx, cause);
+                                }
+                            }
+                        });
+                    }
                 } else {
                     lifecycleManager.onError(ctx, failureCause);
                 }
@@ -269,7 +285,7 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
     }
 
     @Override
-    public ChannelFuture writePushPromise(ChannelHandlerContext ctx, int streamId, int promisedStreamId,
+    public ChannelFuture writePushPromise(final ChannelHandlerContext ctx, int streamId, int promisedStreamId,
             Http2Headers headers, int padding, ChannelPromise promise) {
         try {
             if (connection.goAwayReceived()) {
@@ -285,7 +301,22 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
             // Writing headers may fail during the encode state if they violate HPACK limits.
             Throwable failureCause = future.cause();
             if (failureCause == null) {
+                // This is best-afford as the operation is async it may still fail later on. We just update it here
+                // directly as otherwise it may be challenging for the end-user to co-ordinate writes that depend
+                // on the state.
                 stream.pushPromiseSent();
+
+                if (!future.isDone()) {
+                    future.addListener(new ChannelFutureListener() {
+                        @Override
+                        public void operationComplete(ChannelFuture future) throws Exception {
+                            Throwable cause = future.cause();
+                            if (cause != null) {
+                                lifecycleManager.onError(ctx, cause);
+                            }
+                        }
+                    });
+                }
             } else {
                 lifecycleManager.onError(ctx, failureCause);
             }
@@ -462,7 +493,7 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
         }
 
         @Override
-        public void write(ChannelHandlerContext ctx, int allowedBytes) {
+        public void write(final ChannelHandlerContext ctx, int allowedBytes) {
             boolean isInformational = validateHeadersSentState(stream, headers, connection.isServer(), endOfStream);
             if (promise.isVoid()) {
                 promise = ctx.newPromise();
@@ -472,9 +503,24 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
             ChannelFuture f = frameWriter.writeHeaders(ctx, stream.id(), headers, streamDependency, weight, exclusive,
                                                        padding, endOfStream, promise);
             // Writing headers may fail during the encode state if they violate HPACK limits.
-            Throwable failureCause = f.cause();
+            final Throwable failureCause = f.cause();
             if (failureCause == null) {
+                // This is best-afford as the operation is async it may still fail later on. We just update it here
+                // directly as otherwise it may be challenging for the end-user to co-ordinate writes that depend
+                // on the state.
                 stream.headersSent(isInformational);
+
+                if (!f.isDone()) {
+                    f.addListener(new ChannelFutureListener() {
+                        @Override
+                        public void operationComplete(ChannelFuture future) throws Exception {
+                            Throwable cause = future.cause();
+                            if (cause != null) {
+                                lifecycleManager.onError(ctx, cause);
+                            }
+                        }
+                    });
+                }
             } else {
                 lifecycleManager.onError(ctx, failureCause);
             }
