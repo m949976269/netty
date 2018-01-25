@@ -215,7 +215,10 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
                     // on the state.
                     stream.headersSent(isInformational);
 
-                    notifyLifecycleManagerOnError(future, ctx);
+                    if (!future.isSuccess()) {
+                        // Either the future is not done or failed in the meantime.
+                        notifyLifecycleManagerOnError(future, ctx);
+                    }
                 } else {
                     lifecycleManager.onError(ctx, failureCause);
                 }
@@ -296,7 +299,10 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
                 // on the state.
                 stream.pushPromiseSent();
 
-                notifyLifecycleManagerOnError(future, ctx);
+                if (!future.isSuccess()) {
+                    // Either the future is not done or failed in the meantime.
+                    notifyLifecycleManagerOnError(future, ctx);
+                }
             } else {
                 lifecycleManager.onError(ctx, failureCause);
             }
@@ -440,17 +446,15 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
     }
 
     private void notifyLifecycleManagerOnError(ChannelFuture future, final ChannelHandlerContext ctx) {
-        if (!future.isDone()) {
-            future.addListener(new ChannelFutureListener() {
-                @Override
-                public void operationComplete(ChannelFuture future) throws Exception {
-                    Throwable cause = future.cause();
-                    if (cause != null) {
-                        lifecycleManager.onError(ctx, cause);
-                    }
+        future.addListener(new ChannelFutureListener() {
+            @Override
+            public void operationComplete(ChannelFuture future) throws Exception {
+                Throwable cause = future.cause();
+                if (cause != null) {
+                    lifecycleManager.onError(ctx, cause);
                 }
-            });
-        }
+            }
+        });
     }
 
     /**
@@ -504,7 +508,10 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
                 // on the state.
                 stream.headersSent(isInformational);
 
-                notifyLifecycleManagerOnError(f, ctx);
+                if (!f.isSuccess()) {
+                    // Either the future is not done or failed in the meantime.
+                    notifyLifecycleManagerOnError(f, ctx);
+                }
             } else {
                 lifecycleManager.onError(ctx, failureCause);
             }
