@@ -210,7 +210,7 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
                     // Synchronously set the headersSent flag to ensure that we do not subsequently write
                     // other headers containing pseudo-header fields.
                     //
-                    // This is best-afford as the operation is async it may still fail later on. We just update it here
+                    // This is best-effort as the operation is async it may still fail later on. We just update it here
                     // directly as otherwise it may be challenging for the end-user to co-ordinate writes that depend
                     // on the state.
                     stream.headersSent(isInformational);
@@ -291,7 +291,7 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
             // Writing headers may fail during the encode state if they violate HPACK limits.
             Throwable failureCause = future.cause();
             if (failureCause == null) {
-                // This is best-afford as the operation is async it may still fail later on. We just update it here
+                // This is best-effort as the operation is async it may still fail later on. We just update it here
                 // directly as otherwise it may be challenging for the end-user to co-ordinate writes that depend
                 // on the state.
                 stream.pushPromiseSent();
@@ -499,7 +499,7 @@ public class DefaultHttp2ConnectionEncoder implements Http2ConnectionEncoder {
             // Writing headers may fail during the encode state if they violate HPACK limits.
             Throwable failureCause = f.cause();
             if (failureCause == null) {
-                // This is best-afford as the operation is async it may still fail later on. We just update it here
+                // This is best-effort as the operation is async it may still fail later on. We just update it here
                 // directly as otherwise it may be challenging for the end-user to co-ordinate writes that depend
                 // on the state.
                 stream.headersSent(isInformational);
