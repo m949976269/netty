@@ -209,6 +209,20 @@ public class Http2FrameCodecTest {
         assertTrue(channel.isActive());
     }
 
+     @Test
+     public void flowControlShouldBeResilientToMissingStreams() throws Http2Exception {
+         Http2Connection conn = new DefaultHttp2Connection(true);
+         Http2ConnectionEncoder enc = new DefaultHttp2ConnectionEncoder(conn, new DefaultHttp2FrameWriter());
+         Http2ConnectionDecoder dec = new DefaultHttp2ConnectionDecoder(conn, enc, new DefaultHttp2FrameReader());
+         Http2FrameCodec codec = new Http2FrameCodec(enc, dec, new Http2Settings());
+         EmbeddedChannel em = new EmbeddedChannel(codec);
+
+         // We call #consumeBytes on a stream id which has not been seen yet to emulate the case
+         // where a stream is deregistered which in reality can happen in response to a RST.
+         assertFalse(codec.consumeBytes(1, 1));
+         assertTrue(em.finishAndReleaseAll());
+     }
+
     @Test
     public void entityRequestEntityResponse() throws Exception {
         frameListener.onHeadersRead(http2HandlerCtx, 1, request, 0, false);
@@ -535,6 +549,20 @@ public class Http2FrameCodecTest {
     }
 
     @Test
+    public void writeUnknownFrame() {
+        final Http2FrameStream stream = frameCodec.newStream();
+
+        ByteBuf buffer = Unpooled.buffer().writeByte(1);
+        DefaultHttp2UnknownFrame unknownFrame = new DefaultHttp2UnknownFrame(
+                (byte) 20, new Http2Flags().ack(true), buffer);
+        unknownFrame.stream(stream);
+        channel.write(unknownFrame);
+
+        verify(frameWriter).writeFrame(eq(http2HandlerCtx), eq(unknownFrame.frameType()),
+                eq(unknownFrame.stream().id()), eq(unknownFrame.flags()), eq(buffer), any(ChannelPromise.class));
+    }
+
+    @Test
     public void sendSettingsFrame() {
         Http2Settings settings = new Http2Settings();
         channel.write(new DefaultHttp2SettingsFrame(settings));
@@ -615,24 +643,20 @@ public class Http2FrameCodecTest {
 
     @Test
     public void receivePing() throws Http2Exception {
-        ByteBuf data = Unpooled.buffer(8).writeLong(12345);
-        frameListener.onPingRead(http2HandlerCtx, data);
+        frameListener.onPingRead(http2HandlerCtx, 12345L);
 
         Http2PingFrame pingFrame = inboundHandler.readInbound();
         assertNotNull(pingFrame);
 
-        assertEquals(data, pingFrame.content());
+        assertEquals(12345, pingFrame.content());
         assertFalse(pingFrame.ack());
-        pingFrame.release();
-        data.release();
     }
 
     @Test
     public void sendPing() {
-        ByteBuf data = Unpooled.buffer(8).writeLong(12345);
-        channel.writeAndFlush(new DefaultHttp2PingFrame(data));
+        channel.writeAndFlush(new DefaultHttp2PingFrame(12345));
 
-        verify(frameWriter).writePing(eq(http2HandlerCtx), eq(false), eq(data), anyChannelPromise());
+        verify(frameWriter).writePing(eq(http2HandlerCtx), eq(false), eq(12345L), anyChannelPromise());
     }
 
     @Test
@@ -719,7 +743,7 @@ public class Http2FrameCodecTest {
                 UpgradeEvent.class.getDeclaredConstructor(CharSequence.class, FullHttpRequest.class);
 
         // Check if we could make it accessible which may fail on java9.
-        Assume.assumeTrue(ReflectionUtil.trySetAccessible(constructor) == null);
+        Assume.assumeTrue(ReflectionUtil.trySetAccessible(constructor, true) == null);
 
         HttpServerUpgradeHandler.UpgradeEvent upgradeEvent = constructor.newInstance(
                 "HTTP/2", new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"));
@@ -757,7 +781,7 @@ public class Http2FrameCodecTest {
                 UpgradeEvent.class.getDeclaredConstructor(CharSequence.class, FullHttpRequest.class);
 
         // Check if we could make it accessible which may fail on java9.
-        Assume.assumeTrue(ReflectionUtil.trySetAccessible(constructor) == null);
+        Assume.assumeTrue(ReflectionUtil.trySetAccessible(constructor, true) == null);
 
         String longString = new String(new char[70000]).replace("\0", "*");
         DefaultFullHttpRequest request =

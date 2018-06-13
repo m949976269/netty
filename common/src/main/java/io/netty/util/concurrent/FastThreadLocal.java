@@ -147,19 +147,23 @@ public class FastThreadLocal<V> {
 
     private void registerCleaner(final InternalThreadLocalMap threadLocalMap) {
         Thread current = Thread.currentThread();
-        if (!FastThreadLocalThread.willCleanupFastThreadLocals(current)) {
-            // We will need to ensure we will trigger remove(InternalThreadLocalMap) so everything will be released
-            // and FastThreadLocal.onRemoval(...) will be called.
-            ObjectCleaner.register(current, new Runnable() {
-                @Override
-                public void run() {
-                    remove(threadLocalMap);
-
-                    // It's fine to not call InternalThreadLocalMap.remove() here as this will only be triggered once
-                    // the Thread is collected by GC. In this case the ThreadLocal will be gone away already.
-                }
-            });
+        if (FastThreadLocalThread.willCleanupFastThreadLocals(current) || threadLocalMap.isCleanerFlagSet(index)) {
+            return;
         }
+
+        threadLocalMap.setCleanerFlag(index);
+
+        // We will need to ensure we will trigger remove(InternalThreadLocalMap) so everything will be released
+        // and FastThreadLocal.onRemoval(...) will be called.
+        ObjectCleaner.register(current, new Runnable() {
+            @Override
+            public void run() {
+                remove(threadLocalMap);
+
+                // It's fine to not call InternalThreadLocalMap.remove() here as this will only be triggered once
+                // the Thread is collected by GC. In this case the ThreadLocal will be gone away already.
+            }
+        });
     }
 
     /**
